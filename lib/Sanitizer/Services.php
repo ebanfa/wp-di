@@ -57,8 +57,8 @@ class Services implements SanitizerInterface
 
         $sanitized = [];
         foreach ($node as $id => $definition) {
-            if (is_string($definition)) {
-                if (is_int($id)) {
+            if (\is_string($definition)) {
+                if (\is_int($id)) {
                     $id = $definition;
                 }
 

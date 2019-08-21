@@ -46,6 +46,11 @@ abstract class AbstractTestCase extends TestCase
      * @var Container
      */
     protected $pimple;
+    /**
+     * Definition of the services.
+     *
+     * @var array
+     */
     protected $services = [];
 
     public static $actions = [];
