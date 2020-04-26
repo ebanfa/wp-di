@@ -36,10 +36,6 @@ class PostTypesTest extends WpDi\Test\AbstractTestCase
 {
     public function testBasicsExist()
     {
-        static::assertTrue(class_exists(WpDi\Provider\WordPress\PostTypes::class));
-        static::assertTrue(class_exists(WpDi\Sanitizer\WordPress\PostTypes::class));
-
-        static::assertTrue(class_exists(WpDi\Provider\WpPostTypes::class));
-        static::assertTrue(class_exists(WpDi\Sanitizer\WpPostTypes::class));
+        static::assertTrue(class_exists(WpDi\Helper\WordPress\RegisterPostType::class));
     }
 }

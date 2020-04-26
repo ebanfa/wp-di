@@ -45,48 +45,47 @@ use RmpUp\WpDi\Provider\WordPress\PostTypes;
  * and get away from WordPress to a more agnostic OOP workflow
  * to hold up testability, maintainability and all the other terms of software quality.
  *
- * We solve all of this by a simple service definition like this:
+ * We solve all of this using a service definition like this:
  *
  *
  * ```php
- * <?php // my-plugin-services.php
- *
- * use \RmpUp\WpDi\Provider;
- * use \RmpUp\WpDi\Provider\WordPress;
+ * <?php // 'my-plugin-services.php'
  *
  * return [
- *   Provider\Services::class => [
- *     AnRepository::class,
- *
- *     SomeSeoStuff::class => [
- *       AnRepository::class,
- *       'some_foo'
- *     ]
+ *   'options' => [
+ *     'some_foo' => 'The default value of this option',
  *   ],
  *
- *   WordPress\Options::class => [
- *     'some_foo' => 'The default value of this as long as not given',
- *   ]
+ *   'services' => [
+ *     SomeRepository::class,
  *
- *   WordPress\Actions::class => [
- *     'template_redirect' => [
- *       RejectUnauthorizedThings::class,
- *       SomeSeoStuff::class,
- *     ]
+ *     SomeSeoStuff::class => [
+ *       'arguments' => [
+ *         SomeRepository::class,
+ *         '%some_foo%',
+ *       ],
+ *
+ *       'action' => 'template_redirect',
+ *     ],
+ *
+ *     RejectUnauthorizedThings::class => [
+ *       'action' => 'template_redirect',
+ *     ],
  *   ]
  * ];
+ *
  * ```
  *
  * Step after step this does:
  *
- * 1. Register the "AnRepository"-service
- * 2. Register the "SomeSeoStuff"-service
- *    * Use the "AnRepository"-service as first `__constructor` argument.
+ * 1. Register a default value for the "some_foo" option
+ * 2. Register the "SomeRepository"-service
+ * 3. Register the "SomeSeoStuff"-service
+ *    * Use the "SomeRepository"-service as first `__constructor` argument.
  *    * Use the "some_foo"-option as second argument.
- * 3. "Register" a "some_foo"-option with a default value.
- * 4. Add services to the `template_redirect` action:
- *    * A new "RejectUnauthorizedThings"-service
- *    * The existing "SomeSeoStuff"-service
+ *    * Hook this service to the "template_redirect"-action
+ * 4. Register the "RejectUnauthorizedThings"-service
+ *    * Hook the service to the "template_redirect"-action
  *
  * So in case the `template_redirect` action is fired the services
  * "RejectUnauthorizedThings" and "SomeSeoStuff" will be lazy loaded
@@ -94,17 +93,10 @@ use RmpUp\WpDi\Provider\WordPress\PostTypes;
  *
  *   This is the very short syntax.
  * Read on to know more about the complete syntax
- * and other possibilities like ...
+ * and other possibilities.
  *
- *
- * * `WordPress\Filter` to register filter,
- * * `WordPress\PostTypes` to register post-types,
- * * `WordPress\CliCommands` to add services as command in wp-cli
- *
- * ... and more.
- *
- * We suggest separating the definition into it's own file(s)
- * and load it into the (Pimple-)Container afterwards:
+ * We suggest splitting the configurations by their purpose
+ * and load all at once into the (Pimple-)Container afterwards:
  *
  * ```php
  * <?php
@@ -116,8 +108,42 @@ use RmpUp\WpDi\Provider\WordPress\PostTypes;
  * );
  * ```
  *
- * @copyright  2019 Mike Pretzlaw (https://mike-pretzlawWordPress.de)
- * @since      2019-05-30
+ * Hint: Using the commonly-known YAML-format
+ * and service definitions makes it a bit easier to read.
+ *
+ * ```yaml
+ * # my-plugin-services.yaml
+ * options:
+ *   some_foo: 'The default value of this option'
+ *
+ * services:
+ *   SomeRepository: ~
+ *
+ *   SomeSeoStuff:
+ *     arguments:
+ *       - SomeRepository
+ *       - '%some_foo%'
+ *     action: template_redirect
+ *
+ *   RejectUnauthorizedThings:
+ *     action: template_redirect
+ * ```
+ *
+ * Forward this service-definition using some Yaml-Parser (e.g. `composer require symfony/yaml`):
+ *
+ * ```php
+ * <?php
+ *
+ * $container = new \Pimple\Container();
+ *
+ * $container->register(
+ *   new \RmpUp\WpDi\Provider(
+ *     \Symfony\Component\Yaml\Yaml::parseFile( 'my-plugin-services.yaml' )
+ *   )
+ * );
+ * ```
+ *
+ * @copyright  2020 Mike Pretzlaw (https://rmp-up.de)
  */
 class AutoResolvingProviderTest extends AbstractTestCase
 {
@@ -129,24 +155,7 @@ class AutoResolvingProviderTest extends AbstractTestCase
     {
         remove_all_actions('template_redirect'); // TODO use ::truncateActions instead as soon as available
 
-        $this->definition = [
-            Services::class => [
-                ArrayObject::class,
-                Mirror::class => [
-                    'foo',
-                ]
-            ],
-
-            Actions::class => [
-                'template_redirect' => [
-                    Mirror::class,
-                ]
-            ],
-
-            PostTypes::class => [
-                'qux' => ArrayObject::class
-            ]
-        ];
+        $this->definition = $this->classComment()->execute(0);
 
         parent::setUp();
 
@@ -157,27 +166,24 @@ class AutoResolvingProviderTest extends AbstractTestCase
 
     public function testActionsRegistered()
     {
-        self::assertFilterHasCallback('template_redirect', new IsInstanceOf(LazyService::class));
         self::assertFilterHasCallback('template_redirect', new IsEqual(
-            new LazyService($this->container, Mirror::class)
+            [new LazyService($this->container, 'SomeSeoStuff'), '__invoke']
+        ));
+
+        self::assertFilterHasCallback('template_redirect', new IsEqual(
+            [new LazyService($this->container, \RejectUnauthorizedThings::class), '__invoke']
         ));
     }
 
     public function testServicesRegistered()
     {
-        static::assertInstanceOf(ArrayObject::class, $this->container->get(ArrayObject::class));
-
-        /** @var Mirror $mirror */
-        $mirror = $this->container->get(Mirror::class);
-        static::assertInstanceOf(Mirror::class, $mirror);
-
-        static::assertEquals(['foo'], $mirror->getConstructorArgs());
+        static::assertInstanceOf(\SomeSeoStuff::class, $this->container->get(\SomeSeoStuff::class));
+        static::assertInstanceOf(\RejectUnauthorizedThings::class, $this->container->get(\RejectUnauthorizedThings::class));
     }
 
-    public function testPostTypeRegistered()
+    public function testOptionDefaultVaue()
     {
-        static::assertFilterHasCallback('init', new IsInstanceOf(RegisterPostType::class));
-        static::assertFilterHasCallback('init', new IsEqual(new RegisterPostType($this->container, 'qux', 'qux')));
+        static::assertEquals('The default value of this option', get_option('some_foo'));
     }
 
     public function testThrowsExceptionWhenProviderInvalid()
